@@ -180,31 +180,90 @@ async function getArticleList(req, res, next) {
           };
         let aggregateQuery = [
             {$match: match,},
-            {$lookup:{from: "articlelikes",localField: "_id",foreignField: "article_id",as: "articleLikeData"}},
-            {$unwind: {path: "$articleLikeData",preserveNullAndEmptyArrays: true,},},
-            {$project: { "_id":1,"article":1,"created_by":1 ,"liked_by": "$articleLikeData.liked_by"}},
-            {$lookup:{from: "users",localField: "liked_by",foreignField: "_id",as: "userLikeData"}},
-            {$unwind: {path: "$userLikeData",preserveNullAndEmptyArrays: true,},},
             {
-                $group: {
-                  _id: "$_id",
-                  article: { $first: "$article" },
-                  liked_by: { $push: "$userLikeData.name" },
-                },
-            },
-            {$lookup:{from: "comments",localField: "_id",foreignField: "article_id",as: "articleCommentData"}},
-            {$unwind: {path: "$articleCommentData",preserveNullAndEmptyArrays: true,},},
-            {$project: { "_id":1,"article":1,"created_by":1 ,"liked_by": "$liked_by","commented_by": "$articleCommentData.commented_by","comment": "$articleCommentData.comment"}},
-            {$lookup:{from: "users",localField: "commented_by",foreignField: "_id",as: "userCommentedData"}},
-            {$unwind: {path: "$userCommentedData",preserveNullAndEmptyArrays: true,},},
-            {
-                $group: {
-                  _id: "$_id",
-                  article: { $first: "$article" },
-                  liked_by: { $first: "$liked_by" },
-                  comment_data: { $push: {"commented_by":"$userCommentedData.name","comment":"$comment"} },
-                },
-            },
+                              $lookup: {
+                                  from: "articlelikes",
+                                  let: { local_id: "$_id" },
+                                  pipeline: [
+                                      {
+                                          $match:
+                                              {
+                                                  $expr:
+                                                      {
+                                                          $and:
+                                                              [
+                                                                  { $eq: ["$article_id", "$$local_id"] },
+                                                                  
+                                                              ]
+                                                      }
+                                              }
+                                      },
+                                      {
+                                          $lookup: {
+                                              from: "users",
+                                              localField: "liked_by",
+                                              foreignField: "_id",
+                                              as: "usernames"
+                                          }
+                                      },
+                                      {
+                                          $unwind: "$usernames"
+                                      },
+                                      {
+                                          $project: {
+                                              _id: "$usernames._id",
+                                              username: "$usernames.username",
+                                          }
+                                      }
+                                  ],
+                                  as: "likes"
+                              }
+                          },
+                          {
+                              $lookup: {
+                                  from: "comments",
+                                  let: { local_id: "$_id" },
+                                  pipeline: [
+                                      {
+                                          $match:
+                                              {
+                                                  $expr:
+                                                      {
+                                                          $and:
+                                                              [
+                                                                  { $eq: ["$article_id", "$$local_id"] },
+                                                                  
+                                                              ]
+                                                      }
+                                              }
+                                      },
+                                      {
+                                          $lookup: {
+                                              from: "users",
+                                              localField: "commented_by",
+                                              foreignField: "_id",
+                                              as: "usernames"
+                                          }
+                                      },
+                                      {
+                                          $unwind: "$usernames"
+                                      },
+                                      {
+                                          $project: {
+                                              _id: "$_id",
+                                              comment: 1,
+                                              createdAt: 1,
+                                              updatedAt: 1,
+                                              commented_by: {
+                                                  "_id" : "$usernames._id",
+                                          "name": "$usernames.username"
+                                              }
+                                          }
+                                      }
+                                  ],
+                                  as: "comments"
+                              }
+                          },
         ];
         articleModel
         .aggregate(aggregateQuery)
@@ -226,7 +285,6 @@ async function getArticleList(req, res, next) {
     }
 
 }
-
 async function getArticleListForTags(req, res, next) {
     try{
         var match = {
